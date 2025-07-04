@@ -82,6 +82,7 @@ export class HabitService {
     let progress = [...this.progress$.value];
     
     if (existing) {
+      // Update existing progress
       progress = progress.map(p => 
         p.habitId === habitId && p.date === date 
           ? { 
@@ -94,6 +95,7 @@ export class HabitService {
           : p
       );
     } else {
+      // Create new progress entry
       progress.push({
         habitId,
         date,
@@ -159,25 +161,35 @@ export class HabitService {
     const today = new Date();
     let checkDate = new Date(today);
     
-    while (true) {
-      const dateStr = checkDate.toISOString().split('T')[0];
-      const dayProgress = progress.find(p => p.date === dateStr);
-      
-      if (dayProgress?.completed) {
-        currentStreak++;
-        if (!lastCompletedDate) lastCompletedDate = dateStr;
-      } else if (currentStreak > 0) {
-        break;
-      }
-      
+    // Check if today is completed first
+    const todayStr = today.toISOString().split('T')[0];
+    const todayProgress = progress.find(p => p.date === todayStr);
+    
+    if (todayProgress?.completed) {
+      currentStreak = 1;
+      lastCompletedDate = todayStr;
       checkDate.setDate(checkDate.getDate() - 1);
       
-      // Prevent infinite loop
-      if (checkDate < new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)) break;
+      // Continue checking backwards for consecutive days
+      while (true) {
+        const dateStr = checkDate.toISOString().split('T')[0];
+        const dayProgress = progress.find(p => p.date === dateStr);
+        
+        if (dayProgress?.completed) {
+          currentStreak++;
+        } else {
+          break;
+        }
+        
+        checkDate.setDate(checkDate.getDate() - 1);
+        
+        // Prevent infinite loop - check last 365 days max
+        if (checkDate < new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)) break;
+      }
     }
     
     // Calculate longest streak
-    for (const p of progress) {
+    for (const p of progress.reverse()) {
       if (p.completed) {
         tempStreak++;
         longestStreak = Math.max(longestStreak, tempStreak);

@@ -32,6 +32,7 @@ interface HabitWithStats extends Habit {
         <div 
           class="habit-card"
           [class.completed]="habit.todayProgress?.completed"
+          [style.border-left-color]="habit.color"
           *ngFor="let habit of habitsWithStats$ | async; trackBy: trackByHabit"
         >
           <div class="habit-header">
@@ -45,14 +46,18 @@ interface HabitWithStats extends Habit {
               <button 
                 class="complete-btn quick-complete"
                 [class.completed]="habit.todayProgress?.completed"
-                (click)="markComplete(habit.id)"
-                title="Mark as 100% complete"
+                [style.border-color]="habit.todayProgress?.completed ? '#10b981' : habit.color"
+                [style.background-color]="habit.todayProgress?.completed ? '#10b981' : 'transparent'"
+                (click)="toggleComplete(habit.id)"
+                [title]="habit.todayProgress?.completed ? 'Mark as incomplete' : 'Mark as 100% complete'"
               >
                 <span class="check-icon">{{ habit.todayProgress?.completed ? '✓' : '' }}</span>
               </button>
               
               <button 
                 class="complete-btn progress-btn"
+                [style.border-color]="habit.color"
+                [style.background-color]="habit.color"
                 (click)="openProgressDialog(habit)"
                 title="Set custom completion percentage"
               >
@@ -63,15 +68,15 @@ interface HabitWithStats extends Habit {
           
           <div class="habit-stats">
             <div class="stat">
-              <span class="stat-value">{{ habit.todayProgress?.completionPercentage || 0 }}%</span>
+              <span class="stat-value" [style.color]="habit.color">{{ habit.todayProgress?.completionPercentage || 0 }}%</span>
               <span class="stat-label">Today</span>
             </div>
             <div class="stat">
-              <span class="stat-value">{{ habit.stats.currentStreak }}</span>
+              <span class="stat-value" [style.color]="habit.color">{{ habit.stats.currentStreak }}</span>
               <span class="stat-label">Streak</span>
             </div>
             <div class="stat">
-              <span class="stat-value">{{ habit.stats.completionRate | number:'1.0-0' }}%</span>
+              <span class="stat-value" [style.color]="habit.color">{{ habit.stats.completionRate | number:'1.0-0' }}%</span>
               <span class="stat-label">Success</span>
             </div>
           </div>
@@ -120,8 +125,9 @@ interface HabitWithStats extends Habit {
                 step="5"
                 [(ngModel)]="progressPercentage"
                 class="progress-slider"
+                [style.--slider-color]="selectedHabit?.color"
               >
-              <span class="percentage-display">{{ progressPercentage }}%</span>
+              <span class="percentage-display" [style.color]="selectedHabit?.color">{{ progressPercentage }}%</span>
             </div>
             
             <div class="quick-percentages">
@@ -130,6 +136,9 @@ interface HabitWithStats extends Habit {
                 *ngFor="let percent of quickPercentages"
                 (click)="setQuickPercentage(percent)"
                 [class.active]="progressPercentage === percent"
+                [style.background-color]="progressPercentage === percent ? selectedHabit?.color : 'transparent'"
+                [style.border-color]="progressPercentage === percent ? selectedHabit?.color : 'var(--border-color)'"
+                [style.color]="progressPercentage === percent ? 'white' : 'var(--text-primary)'"
               >
                 {{ percent }}%
               </button>
@@ -148,7 +157,14 @@ interface HabitWithStats extends Habit {
         
         <div class="dialog-actions">
           <button class="btn btn-outline" (click)="closeProgressDialog()">Cancel</button>
-          <button class="btn btn-primary" (click)="saveProgress()">Save Progress</button>
+          <button 
+            class="btn btn-primary" 
+            [style.background-color]="selectedHabit?.color"
+            [style.border-color]="selectedHabit?.color"
+            (click)="saveProgress()"
+          >
+            Save Progress
+          </button>
         </div>
       </div>
     </div>
@@ -193,8 +209,10 @@ export class HabitListComponent implements OnInit {
     return habit.id;
   }
 
-  markComplete(habitId: string): void {
-    this.habitService.markHabitComplete(habitId, this.todayString);
+  toggleComplete(habitId: string): void {
+    const currentProgress = this.habitService.getHabitProgress(habitId, this.todayString);
+    const newPercentage = currentProgress?.completed ? 0 : 100;
+    this.habitService.updateHabitProgress(habitId, this.todayString, newPercentage);
   }
 
   openProgressDialog(habit: Habit): void {
