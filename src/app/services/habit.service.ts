@@ -19,6 +19,10 @@ export class HabitService {
     return this.habits$.asObservable();
   }
 
+  getHabitById(id: string): Habit | undefined {
+    return this.habits$.value.find(habit => habit.id === id);
+  }
+
   addHabit(habit: Omit<Habit, 'id' | 'createdAt'>): void {
     const newHabit: Habit = {
       ...habit,
@@ -70,21 +74,33 @@ export class HabitService {
   }
 
   markHabitComplete(habitId: string, date: string): void {
+    this.updateHabitProgress(habitId, date, 100);
+  }
+
+  updateHabitProgress(habitId: string, date: string, percentage: number, notes?: string): void {
     const existing = this.progress$.value.find(p => p.habitId === habitId && p.date === date);
     let progress = [...this.progress$.value];
     
     if (existing) {
       progress = progress.map(p => 
         p.habitId === habitId && p.date === date 
-          ? { ...p, completed: !p.completed, completedAt: !p.completed ? new Date() : undefined }
+          ? { 
+              ...p, 
+              completionPercentage: percentage,
+              completed: percentage >= 100,
+              completedAt: percentage >= 100 ? new Date() : (percentage > 0 ? new Date() : undefined),
+              notes: notes || p.notes
+            }
           : p
       );
     } else {
       progress.push({
         habitId,
         date,
-        completed: true,
-        completedAt: new Date()
+        completed: percentage >= 100,
+        completedAt: percentage > 0 ? new Date() : undefined,
+        completionPercentage: percentage,
+        notes
       });
     }
     
@@ -194,7 +210,13 @@ export class HabitService {
     }
     
     if (progress) {
-      this.progress$.next(JSON.parse(progress));
+      const parsedProgress = JSON.parse(progress);
+      // Migrate old progress data to include completionPercentage
+      const migratedProgress = parsedProgress.map((p: any) => ({
+        ...p,
+        completionPercentage: p.completionPercentage || (p.completed ? 100 : 0)
+      }));
+      this.progress$.next(migratedProgress);
     }
     
     if (streaks) {

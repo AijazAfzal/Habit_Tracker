@@ -14,6 +14,8 @@ export interface HabitProgress {
   date: string; // YYYY-MM-DD format
   completed: boolean;
   completedAt?: Date;
+  completionPercentage?: number; // Add optional percentage field
+  notes?: string; // Add optional notes field
 }
 
 export interface HabitStreak {

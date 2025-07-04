@@ -1,78 +1,154 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { HabitService } from '../../services/habit.service';
-import { Habit, HabitProgress } from '../../models/habit.model';
-import { Observable, combineLatest, map } from 'rxjs';
+import { Habit, HabitProgress, HabitStats } from '../../models/habit.model';
+import { Observable, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
 
-interface HabitWithProgress extends Habit {
-  todayProgress?: HabitProgress;
-  currentStreak: number;
-  completionRate: number;
+interface HabitWithStats extends Habit {
+  stats: HabitStats;
+  todayProgress: HabitProgress | undefined;
 }
 
 @Component({
   selector: 'app-habit-list',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="habit-list">
       <div class="list-header">
         <h2>Today's Habits</h2>
-        <p class="date">{{ today | date:'fullDate' }}</p>
+        <div class="date">{{ today | date:'fullDate' }}</div>
       </div>
       
-      <div *ngIf="(habitsWithProgress$ | async)?.length === 0" class="empty-state">
-        <div class="empty-icon">📝</div>
+      <div class="empty-state" *ngIf="(habitsWithStats$ | async)?.length === 0">
+        <div class="empty-icon">🎯</div>
         <h3>No habits yet</h3>
-        <p>Create your first habit to get started on your journey!</p>
+        <p>Start building better habits by adding your first one!</p>
       </div>
       
-      <div class="habits-grid" *ngIf="(habitsWithProgress$ | async)?.length as count">
+      <div class="habits-grid" *ngIf="(habitsWithStats$ | async)?.length! > 0">
         <div 
-          *ngFor="let habit of habitsWithProgress$ | async; trackBy: trackByHabitId"
           class="habit-card"
           [class.completed]="habit.todayProgress?.completed"
-          [style.border-left-color]="habit.color">
-          
+          *ngFor="let habit of habitsWithStats$ | async; trackBy: trackByHabit"
+        >
           <div class="habit-header">
             <div class="habit-info">
               <h3 class="habit-name">{{ habit.name }}</h3>
-              <p class="habit-category">{{ getCategoryIcon(habit.category) }} {{ habit.category }}</p>
-              <p *ngIf="habit.description" class="habit-description">{{ habit.description }}</p>
+              <div class="habit-category">{{ habit.category }}</div>
+              <p class="habit-description" *ngIf="habit.description">{{ habit.description }}</p>
             </div>
             
-            <button 
-              class="complete-btn"
-              [class.completed]="habit.todayProgress?.completed"
-              (click)="toggleHabit(habit.id)"
-              [attr.aria-label]="habit.todayProgress?.completed ? 'Mark as incomplete' : 'Mark as complete'">
-              <span class="check-icon">{{ habit.todayProgress?.completed ? '✓' : '' }}</span>
-            </button>
+            <div class="completion-actions">
+              <button 
+                class="complete-btn quick-complete"
+                [class.completed]="habit.todayProgress?.completed"
+                (click)="markComplete(habit.id)"
+                title="Mark as 100% complete"
+              >
+                <span class="check-icon">{{ habit.todayProgress?.completed ? '✓' : '' }}</span>
+              </button>
+              
+              <button 
+                class="complete-btn progress-btn"
+                (click)="openProgressDialog(habit)"
+                title="Set custom completion percentage"
+              >
+                <span class="progress-icon">%</span>
+              </button>
+            </div>
           </div>
           
           <div class="habit-stats">
             <div class="stat">
-              <span class="stat-value">{{ habit.currentStreak }}</span>
-              <span class="stat-label">Day Streak</span>
+              <span class="stat-value">{{ habit.todayProgress?.completionPercentage || 0 }}%</span>
+              <span class="stat-label">Today</span>
             </div>
             <div class="stat">
-              <span class="stat-value">{{ habit.completionRate.toFixed(0) }}%</span>
-              <span class="stat-label">Completion</span>
+              <span class="stat-value">{{ habit.stats.currentStreak }}</span>
+              <span class="stat-label">Streak</span>
             </div>
-            <div class="stat" *ngIf="habit.targetDays">
-              <span class="stat-value">{{ habit.targetDays }}</span>
-              <span class="stat-label">Target Days</span>
+            <div class="stat">
+              <span class="stat-value">{{ habit.stats.completionRate | number:'1.0-0' }}%</span>
+              <span class="stat-label">Success</span>
             </div>
           </div>
           
           <div class="habit-actions">
-            <button class="action-btn edit" (click)="editHabit(habit)" aria-label="Edit habit">
+            <button 
+              class="action-btn edit" 
+              (click)="editHabit(habit)"
+              title="Edit habit"
+            >
               ✏️
             </button>
-            <button class="action-btn delete" (click)="deleteHabit(habit)" aria-label="Delete habit">
+            <button 
+              class="action-btn delete" 
+              (click)="deleteHabit(habit.id)"
+              title="Delete habit"
+            >
               🗑️
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Progress Dialog -->
+    <div class="modal-overlay" *ngIf="showProgressDialog" (click)="closeProgressDialog()">
+      <div class="progress-dialog" (click)="$event.stopPropagation()">
+        <div class="dialog-header">
+          <h3>Update Progress</h3>
+          <button class="close-btn" (click)="closeProgressDialog()">×</button>
+        </div>
+        
+        <div class="dialog-content">
+          <div class="habit-info">
+            <h4>{{ selectedHabit?.name }}</h4>
+            <p>{{ todayString | date:'mediumDate' }}</p>
+          </div>
+          
+          <div class="progress-input">
+            <label>Completion Percentage</label>
+            <div class="slider-container">
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                step="5"
+                [(ngModel)]="progressPercentage"
+                class="progress-slider"
+              >
+              <span class="percentage-display">{{ progressPercentage }}%</span>
+            </div>
+            
+            <div class="quick-percentages">
+              <button 
+                class="quick-btn" 
+                *ngFor="let percent of quickPercentages"
+                (click)="setQuickPercentage(percent)"
+                [class.active]="progressPercentage === percent"
+              >
+                {{ percent }}%
+              </button>
+            </div>
+          </div>
+          
+          <div class="notes-input">
+            <label>Notes (optional)</label>
+            <textarea 
+              [(ngModel)]="progressNotes"
+              placeholder="Add any notes about your progress..."
+              rows="3"
+            ></textarea>
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button class="btn btn-outline" (click)="closeProgressDialog()">Cancel</button>
+          <button class="btn btn-primary" (click)="saveProgress()">Save Progress</button>
         </div>
       </div>
     </div>
@@ -80,68 +156,85 @@ interface HabitWithProgress extends Habit {
   styleUrls: ['./habit-list.component.scss']
 })
 export class HabitListComponent implements OnInit {
-  habitsWithProgress$: Observable<HabitWithProgress[]>;
+  @Output() editHabitEvent = new EventEmitter<Habit>();
+  
   today = new Date();
   todayString = this.today.toISOString().split('T')[0];
+  
+  habitsWithStats$: Observable<HabitWithStats[]> = new Observable();
+  
+  // Progress dialog properties
+  showProgressDialog = false;
+  selectedHabit: Habit | null = null;
+  progressPercentage = 0;
+  progressNotes = '';
+  quickPercentages = [0, 25, 50, 75, 100];
 
-  constructor(private habitService: HabitService) {
-    this.habitsWithProgress$ = combineLatest([
+  constructor(private habitService: HabitService) {}
+
+  ngOnInit(): void {
+    this.habitsWithStats$ = combineLatest([
       this.habitService.getHabits(),
-      this.habitService.getProgress(),
-      this.habitService.getStreaks()
+      this.habitService.getProgress()
     ]).pipe(
-      map(([habits, progress, streaks]) => 
-        habits
+      map(([habits, progress]) => {
+        return habits
           .filter(habit => habit.isActive)
-          .map(habit => {
-            const todayProgress = progress.find(p => 
-              p.habitId === habit.id && p.date === this.todayString
-            );
-            const streak = streaks.find(s => s.habitId === habit.id);
-            const stats = this.habitService.getHabitStats(habit.id);
-            
-            return {
-              ...habit,
-              todayProgress,
-              currentStreak: streak?.currentStreak || 0,
-              completionRate: stats.completionRate
-            };
-          })
-      )
+          .map(habit => ({
+            ...habit,
+            stats: this.habitService.getHabitStats(habit.id),
+            todayProgress: this.habitService.getHabitProgress(habit.id, this.todayString)
+          }));
+      })
     );
   }
 
-  ngOnInit(): void {}
+  trackByHabit(index: number, habit: HabitWithStats): string {
+    return habit.id;
+  }
 
-  toggleHabit(habitId: string): void {
+  markComplete(habitId: string): void {
     this.habitService.markHabitComplete(habitId, this.todayString);
   }
 
-  editHabit(habit: Habit): void {
-    // This would typically emit an event to parent component
-    console.log('Edit habit:', habit);
+  openProgressDialog(habit: Habit): void {
+    this.selectedHabit = habit;
+    const currentProgress = this.habitService.getHabitProgress(habit.id, this.todayString);
+    this.progressPercentage = currentProgress?.completionPercentage || 0;
+    this.progressNotes = currentProgress?.notes || '';
+    this.showProgressDialog = true;
   }
 
-  deleteHabit(habit: Habit): void {
-    if (confirm(`Are you sure you want to delete "${habit.name}"? This action cannot be undone.`)) {
-      this.habitService.deleteHabit(habit.id);
+  closeProgressDialog(): void {
+    this.showProgressDialog = false;
+    this.selectedHabit = null;
+    this.progressPercentage = 0;
+    this.progressNotes = '';
+  }
+
+  setQuickPercentage(percentage: number): void {
+    this.progressPercentage = percentage;
+  }
+
+  saveProgress(): void {
+    if (this.selectedHabit) {
+      this.habitService.updateHabitProgress(
+        this.selectedHabit.id,
+        this.todayString,
+        this.progressPercentage,
+        this.progressNotes
+      );
+      this.closeProgressDialog();
     }
   }
 
-  getCategoryIcon(category: string): string {
-    const icons: { [key: string]: string } = {
-      'Health': '🏃‍♂️',
-      'Learning': '📚',
-      'Productivity': '⚡',
-      'Mindfulness': '🧘‍♀️',
-      'Social': '👥',
-      'Creative': '🎨',
-      'Other': '📌'
-    };
-    return icons[category] || '📌';
+  editHabit(habit: Habit): void {
+    this.editHabitEvent.emit(habit);
   }
 
-  trackByHabitId(index: number, habit: HabitWithProgress): string {
-    return habit.id;
+  deleteHabit(habitId: string): void {
+    if (confirm('Are you sure you want to delete this habit? This action cannot be undone.')) {
+      this.habitService.deleteHabit(habitId);
+    }
   }
 }

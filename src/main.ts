@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { HeaderComponent } from './app/components/header/header.component';
 import { HabitFormComponent } from './app/components/habit-form/habit-form.component';
@@ -16,6 +17,7 @@ import { Habit } from './app/models/habit.model';
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     HeaderComponent,
     HabitFormComponent,
     HabitListComponent,
@@ -60,7 +62,10 @@ import { Habit } from './app/models/habit.model';
           <div class="content-grid">
             <!-- Left Column: Habits and Calendar -->
             <div class="main-column">
-              <app-habit-list *ngIf="currentView === 'list'"></app-habit-list>
+              <app-habit-list 
+                *ngIf="currentView === 'list'"
+                (editHabitEvent)="onEditHabit($event)">
+              </app-habit-list>
               <app-calendar *ngIf="currentView === 'calendar'"></app-calendar>
             </div>
             
@@ -111,6 +116,11 @@ export class App implements OnInit {
       this.habitService.addHabit(habitData);
     }
     this.closeHabitForm();
+  }
+
+  onEditHabit(habit: Habit): void {
+    this.editingHabit = habit;
+    this.showForm = true;
   }
 
   toggleView(): void {
